@@ -14,6 +14,17 @@ from googleapiclient.discovery import build
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 TOKEN_FILE = "token.json"
 CREDENTIALS_FILE = "credentials.json"
+
+def _get_redirect_uri() -> str:
+    cloud_url = os.getenv("STREAMLIT_APP_URL", "")
+    if cloud_url:
+        return cloud_url.rstrip("/") + "/"
+    # Streamlit Cloud sets HOSTNAME env var containing the app domain
+    hostname = os.getenv("HOSTNAME", "")
+    if hostname and "streamlit.app" in hostname:
+        return f"https://{hostname}/"
+    return "http://localhost:8501/"
+
 REDIRECT_URI = "http://localhost:8501/"
 
 
@@ -42,7 +53,7 @@ def get_auth_url() -> Tuple[str, object]:
     flow = Flow.from_client_secrets_file(
         _get_credentials_file(),
         scopes=SCOPES,
-        redirect_uri=REDIRECT_URI,
+        redirect_uri=_get_redirect_uri(),
     )
     auth_url, _ = flow.authorization_url(
         prompt="consent",
@@ -53,6 +64,7 @@ def get_auth_url() -> Tuple[str, object]:
 
 
 def exchange_code(flow, code: str) -> Credentials:
+    flow.redirect_uri = _get_redirect_uri()
     flow.fetch_token(code=code)
     creds = flow.credentials
     with open(TOKEN_FILE, "w") as f:
