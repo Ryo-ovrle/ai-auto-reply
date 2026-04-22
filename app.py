@@ -205,10 +205,9 @@ with st.sidebar:
             st.rerun()
     else:
         if gmail_client.credentials_exist():
-            if st.button("🔗 Gmailを連携する", use_container_width=True, type="primary"):
-                auth_url, _ = gmail_client.get_auth_url()
-                st.markdown(f"**[👉 Googleで認証する]({auth_url})**")
-                st.caption("認証後、自動でこのページに戻ります。")
+            auth_url, _ = gmail_client.get_auth_url()
+            st.markdown(f"**[🔗 Gmailを連携する]({auth_url})**")
+            st.caption("認証後、自動でこのページに戻ります。")
 
     # Outlook連携
     if st.session_state.ol_email and st.session_state.ol_password:
