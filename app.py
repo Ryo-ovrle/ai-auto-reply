@@ -24,8 +24,9 @@ st.markdown("""
 
 .brand-title {
     font-family: 'Space Grotesk', -apple-system, 'Helvetica Neue', sans-serif;
-    font-size: 7rem !important;
+    font-size: 5.5rem !important;
     font-weight: 900 !important;
+    font-style: italic;
     letter-spacing: -0.04em;
     line-height: 1;
     margin-bottom: 0;
