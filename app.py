@@ -88,9 +88,8 @@ def _init():
         "cw_messages": [],
         "cw_selected_msg": None,
         "cw_reply": "",
-        "ol_access_token": "",
-        "ol_refresh_token": "",
         "ol_email": "",
+        "ol_password": "",
         "ol_messages": [],
         "ol_selected_msg": None,
         "ol_generated_reply": "",
@@ -153,28 +152,16 @@ def do_send(msg: dict, reply_text: str):
 # ── OAuth callback ────────────────────────────────────────────────────────────
 params = st.query_params
 if "code" in params:
-    if params.get("state") == "outlook_auth":
-        try:
-            token = outlook_client.exchange_code(params["code"])
-            st.session_state.ol_access_token = token["access_token"]
-            st.session_state.ol_refresh_token = token.get("refresh_token", "")
-            st.session_state.ol_email = outlook_client.get_user_email(token["access_token"])
-            st.query_params.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Outlook認証エラー: {e}")
-            st.query_params.clear()
-    else:
-        try:
-            creds = gmail_client.exchange_code(None, params["code"])
-            svc = gmail_client.build_service(creds)
-            st.session_state.gmail_service = svc
-            st.session_state.gmail_email = gmail_client.get_user_email(svc)
-            st.query_params.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Gmail認証エラー: {e}")
-            st.query_params.clear()
+    try:
+        creds = gmail_client.exchange_code(None, params["code"])
+        svc = gmail_client.build_service(creds)
+        st.session_state.gmail_service = svc
+        st.session_state.gmail_email = gmail_client.get_user_email(svc)
+        st.query_params.clear()
+        st.rerun()
+    except Exception as e:
+        st.error(f"Gmail認証エラー: {e}")
+        st.query_params.clear()
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -220,21 +207,14 @@ with st.sidebar:
                 st.caption("認証後、自動でこのページに戻ります。")
 
     # Outlook連携
-    if st.session_state.ol_access_token:
+    if st.session_state.ol_email and st.session_state.ol_password:
         st.markdown('<span class="success-badge">✅ Outlook連携済み</span>', unsafe_allow_html=True)
         if st.button("🔓 Outlook解除", use_container_width=True):
-            st.session_state.ol_access_token = ""
-            st.session_state.ol_refresh_token = ""
             st.session_state.ol_email = ""
+            st.session_state.ol_password = ""
             st.session_state.ol_messages = []
             st.session_state.ol_selected_msg = None
             st.rerun()
-    else:
-        if outlook_client.credentials_exist():
-            if st.button("🔗 Outlookを連携する", use_container_width=True, type="primary"):
-                auth_url = outlook_client.get_auth_url()
-                st.markdown(f"**[👉 Microsoftで認証する]({auth_url})**")
-                st.caption("認証後、自動でこのページに戻ります。")
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -383,21 +363,25 @@ if page == "gmail":
 # PAGE: Outlook
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "outlook":
-    if not st.session_state.ol_access_token:
-        st.info("👈 サイドバーから「Outlookを連携する」を押してください。")
-    else:
-        # アクセストークンのリフレッシュを試みる（401時）
-        def _ol_refresh():
-            if st.session_state.ol_refresh_token:
-                try:
-                    token = outlook_client.refresh_access_token(st.session_state.ol_refresh_token)
-                    st.session_state.ol_access_token = token["access_token"]
-                    if token.get("refresh_token"):
-                        st.session_state.ol_refresh_token = token["refresh_token"]
-                except Exception:
-                    st.session_state.ol_access_token = ""
-                    st.rerun()
+    st.markdown("#### 📮 Outlook")
 
+    # ── ログイン入力 ──────────────────────────────────────────────────────────
+    ol_email_in = st.text_input("メールアドレス", value=st.session_state.ol_email,
+                                 placeholder="you@outlook.com", key="ol_email_input")
+    ol_pass_in = st.text_input("パスワード", value=st.session_state.ol_password,
+                                type="password",
+                                placeholder="パスワード（MFA有効の場合はアプリパスワード）",
+                                key="ol_pass_input")
+    if ol_email_in:
+        st.session_state.ol_email = ol_email_in
+    if ol_pass_in:
+        st.session_state.ol_password = ol_pass_in
+
+    ol_ready = bool(st.session_state.ol_email and st.session_state.ol_password)
+
+    if not ol_ready:
+        st.info("👆 メールアドレスとパスワードを入力してください。")
+    else:
         col_ol1, col_ol2 = st.columns([1, 1.6], gap="large")
 
         with col_ol1:
@@ -414,15 +398,13 @@ if page == "outlook":
                 with st.spinner("読み込み中..."):
                     try:
                         st.session_state.ol_messages = outlook_client.list_messages(
-                            st.session_state.ol_access_token,
+                            st.session_state.ol_email,
+                            st.session_state.ol_password,
                             max_results=20,
                             unread_only=(filter_ol == "未読のみ"),
                         )
                     except Exception as e:
-                        if "401" in str(e):
-                            _ol_refresh()
-                        else:
-                            st.error(f"取得エラー: {e}")
+                        st.error(f"取得エラー: {e}")
 
             for msg in st.session_state.ol_messages:
                 is_unread = not msg.get("is_read", True)
@@ -435,7 +417,7 @@ if page == "outlook":
                     padding:0.55rem 0.8rem;margin-bottom:0.35rem;">
                     <b style="font-size:0.88rem">{'🔵 ' if is_unread else ''}{msg['subject'][:38]}</b><br>
                     <small style="color:#64748b">{msg['from'][:40]}</small><br>
-                    <small style="color:#94a3b8">{msg['snippet'][:55]}...</small>
+                    <small style="color:#94a3b8">{msg['date']}</small>
                     </div>""",
                     unsafe_allow_html=True,
                 )
@@ -443,14 +425,13 @@ if page == "outlook":
                     with st.spinner("取得中..."):
                         try:
                             full = outlook_client.get_message_body(
-                                st.session_state.ol_access_token, msg["id"])
+                                st.session_state.ol_email,
+                                st.session_state.ol_password,
+                                msg["id"])
                             st.session_state.ol_selected_msg = full
                             st.session_state.ol_generated_reply = ""
                         except Exception as e:
-                            if "401" in str(e):
-                                _ol_refresh()
-                            else:
-                                st.error(f"取得エラー: {e}")
+                            st.error(f"取得エラー: {e}")
                     st.rerun()
 
         with col_ol2:
@@ -494,9 +475,13 @@ if page == "outlook":
                             with st.spinner("送信中..."):
                                 try:
                                     outlook_client.send_reply(
-                                        st.session_state.ol_access_token, msg, edited_ol)
+                                        st.session_state.ol_email,
+                                        st.session_state.ol_password,
+                                        msg, edited_ol)
                                     outlook_client.mark_as_read(
-                                        st.session_state.ol_access_token, msg["id"])
+                                        st.session_state.ol_email,
+                                        st.session_state.ol_password,
+                                        msg["id"])
                                     request_box.save_history(
                                         "Outlook", msg["from"], msg["subject"],
                                         edited_ol, st.session_state.ol_email)
