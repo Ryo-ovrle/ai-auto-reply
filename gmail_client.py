@@ -98,8 +98,7 @@ def exchange_code(flow, code: str) -> Credentials:
         client_secret=cfg["client_secret"],
         scopes=SCOPES,
     )
-    with open(TOKEN_FILE, "w") as f:
-        f.write(creds.to_json())
+    # セッションのみ保持（ファイル保存しない → ユーザーごとに独立した認証）
     return creds
 
 
