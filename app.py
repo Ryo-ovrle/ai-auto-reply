@@ -348,9 +348,15 @@ if page == "gmail":
 if page == "chatwork":
     st.markdown("#### 💼 Chatwork")
 
+    cw_input = st.text_input("APIトークン", value=st.session_state.cw_token,
+                              type="password", placeholder="Chatwork APIトークン",
+                              key="cw_token_input")
+    if cw_input:
+        st.session_state.cw_token = cw_input
+
     cw_token = st.session_state.cw_token
     if not cw_token:
-        st.warning("⚙️ 設定ページでChatwork APIトークンを入力してください。")
+        st.info("👆 Chatwork APIトークンを入力してください。")
     else:
         col_cw1, col_cw2 = st.columns([1, 1.6], gap="large")
 
@@ -575,12 +581,6 @@ if page == "request":
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "settings":
     st.markdown("#### ⚙️ 設定")
-
-    st.markdown("### 💼 Chatwork")
-    cw_input = st.text_input("APIトークン", value=st.session_state.cw_token,
-                              type="password", placeholder="Chatwork APIトークン")
-    if cw_input:
-        st.session_state.cw_token = cw_input
 
     if st.session_state.reply_history:
         st.divider()
