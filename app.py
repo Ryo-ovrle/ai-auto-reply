@@ -243,10 +243,14 @@ if page == "gmail":
             col_r1, col_r2 = st.columns([2, 1])
             with col_r1:
                 label_filter = st.selectbox("フィルター", ["INBOX", "UNREAD"],
-                                             label_visibility="collapsed")
+                                             label_visibility="collapsed", key="gmail_filter")
             with col_r2:
                 if st.button("🔄", use_container_width=True):
                     st.session_state.gmail_messages = []
+
+            if st.session_state.get("_gmail_filter_prev") != label_filter:
+                st.session_state.gmail_messages = []
+                st.session_state["_gmail_filter_prev"] = label_filter
 
             if not st.session_state.gmail_messages:
                 with st.spinner("読み込み中..."):

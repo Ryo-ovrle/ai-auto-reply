@@ -26,7 +26,7 @@ def _decode_str(s: str) -> str:
 
 
 def _imap(email_addr: str, password: str):
-    mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
+    mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=20)
     mail.login(email_addr, password)
     return mail
 
@@ -43,42 +43,46 @@ def test_login(email_addr: str, password: str) -> bool:
 def list_messages(email_addr: str, password: str,
                   max_results: int = 20, unread_only: bool = False) -> list[dict]:
     mail = _imap(email_addr, password)
-    mail.select("INBOX")
-    criteria = "UNSEEN" if unread_only else "ALL"
-    _, data = mail.uid("SEARCH", None, criteria)
-    uids = data[0].split()
-    uids = uids[-max_results:][::-1]
+    try:
+        mail.select("INBOX")
+        criteria = "UNSEEN" if unread_only else "ALL"
+        _, data = mail.uid("SEARCH", None, criteria)
+        uids = data[0].split()
+        uids = uids[-max_results:][::-1]
 
-    items = []
-    for uid in uids:
-        _, raw = mail.uid("FETCH", uid,
-                          "(FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])")
-        if not raw or not raw[0] or not isinstance(raw[0], tuple):
-            continue
-        msg = _email.message_from_bytes(raw[0][1])
-        flags_str = raw[0][0].decode(errors="replace") if raw[0][0] else ""
-        is_read = "\\Seen" in flags_str
-        items.append({
-            "id": uid.decode(),
-            "subject": _decode_str(msg.get("Subject")) or "（件名なし）",
-            "from": _decode_str(msg.get("From", "")),
-            "date": msg.get("Date", "")[:25],
-            "message_id_header": msg.get("Message-ID", ""),
-            "is_read": is_read,
-            "snippet": "",
-        })
-    mail.logout()
-    return items
+        items = []
+        for uid in uids:
+            _, raw = mail.uid("FETCH", uid,
+                              "(FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])")
+            if not raw or not raw[0] or not isinstance(raw[0], tuple):
+                continue
+            msg = _email.message_from_bytes(raw[0][1])
+            flags_str = raw[0][0].decode(errors="replace") if raw[0][0] else ""
+            is_read = "\\Seen" in flags_str
+            items.append({
+                "id": uid.decode(),
+                "subject": _decode_str(msg.get("Subject")) or "（件名なし）",
+                "from": _decode_str(msg.get("From", "")),
+                "date": msg.get("Date", "")[:25],
+                "message_id_header": msg.get("Message-ID", ""),
+                "is_read": is_read,
+                "snippet": "",
+            })
+        return items
+    finally:
+        mail.logout()
 
 
 def get_message_body(email_addr: str, password: str, uid: str) -> dict:
     mail = _imap(email_addr, password)
-    mail.select("INBOX")
-    _, raw = mail.uid("FETCH", uid.encode(), "(RFC822)")
-    mail.logout()
+    try:
+        mail.select("INBOX")
+        _, raw = mail.uid("FETCH", uid.encode(), "(RFC822)")
+    finally:
+        mail.logout()
 
     if not raw or not raw[0] or not isinstance(raw[0], tuple):
-        return {}
+        raise Exception("メッセージの取得に失敗しました")
 
     msg = _email.message_from_bytes(raw[0][1])
     body = _extract_text(msg)
@@ -141,8 +145,10 @@ def send_reply(email_addr: str, password: str, original: dict, reply_body: str) 
 def mark_as_read(email_addr: str, password: str, uid: str) -> None:
     try:
         mail = _imap(email_addr, password)
-        mail.select("INBOX")
-        mail.uid("STORE", uid.encode(), "+FLAGS", "\\Seen")
-        mail.logout()
+        try:
+            mail.select("INBOX")
+            mail.uid("STORE", uid.encode(), "+FLAGS", "\\Seen")
+        finally:
+            mail.logout()
     except Exception:
         pass
