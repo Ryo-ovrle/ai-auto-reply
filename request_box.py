@@ -1,6 +1,7 @@
 import os
 import hashlib
 import base64
+from datetime import datetime, timedelta, timezone
 import streamlit as st
 
 def _client():
@@ -84,11 +85,12 @@ def get_history(user_email: str) -> list[dict]:
     if not client or not user_email:
         return []
     try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
         res = (
             client.table("reply_history")
             .select("*")
             .eq("user_id", _user_id(user_email))
-            .gte("created_at", "now() - interval '72 hours'")
+            .gte("created_at", cutoff)
             .order("created_at", desc=True)
             .limit(100)
             .execute()

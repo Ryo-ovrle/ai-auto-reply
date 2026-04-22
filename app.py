@@ -87,6 +87,10 @@ def _init():
 
 _init()
 
+# Gmailサービスがあるのにemailが空なら取得
+if st.session_state.gmail_service and not st.session_state.gmail_email:
+    st.session_state.gmail_email = gmail_client.get_user_email(st.session_state.gmail_service)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def extract_email(sender: str) -> str:
@@ -484,20 +488,23 @@ if page == "settings":
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "history":
     st.markdown("#### 🕘 返信履歴")
-    st.caption("このシステムで送信した返信の記録です。")
-    history = request_box.get_history(st.session_state.gmail_email)
-    if not history:
-        st.info("まだ返信履歴がありません。")
+    st.caption("このシステムで送信した返信の記録です。72時間で自動削除されます。")
+    if not st.session_state.gmail_email:
+        st.warning("👈 サイドバーからGmailを連携すると履歴が表示されます。")
     else:
-        for item in history:
-            ch = item.get("channel", "")
-            to = item.get("to_address", "")
-            subj = item.get("subject", "")
-            body = item.get("body", "")
-            ts = item.get("created_at", "")[:16].replace("T", " ")
-            with st.expander(f"**{ch}** | {subj[:35]} → {to[:30]}　`{ts}`"):
-                st.text_area("返信内容", value=body, height=120, disabled=True,
-                             label_visibility="collapsed", key=f"hist_{item['id']}")
+        history = request_box.get_history(st.session_state.gmail_email)
+        if not history:
+            st.info("まだ返信履歴がありません。")
+        else:
+            for item in history:
+                ch = item.get("channel", "")
+                to = item.get("to_address", "")
+                subj = item.get("subject", "")
+                body = item.get("body", "")
+                ts = item.get("created_at", "")[:16].replace("T", " ")
+                with st.expander(f"**{ch}** | {subj[:35]} → {to[:30]}　`{ts}`"):
+                    st.text_area("返信内容", value=body, height=120, disabled=True,
+                                 label_visibility="collapsed", key=f"hist_{item['id']}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE: できること
