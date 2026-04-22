@@ -204,10 +204,7 @@ with st.sidebar:
             st.session_state.selected_msg = None
             st.rerun()
     else:
-        if gmail_client.credentials_exist() and st.session_state.page == "gmail":
-            auth_url, _ = gmail_client.get_auth_url()
-            st.markdown(f"**[🔗 Gmailを連携する]({auth_url})**")
-            st.caption("認証後、自動でこのページに戻ります。")
+        pass
 
     # Outlook連携
     if st.session_state.ol_email and st.session_state.ol_password:
@@ -232,7 +229,12 @@ page = st.session_state.page
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "gmail":
     if not st.session_state.gmail_service:
-        st.info("👈 サイドバーから「Gmailを連携する」を押してください。")
+        if gmail_client.credentials_exist():
+            auth_url, _ = gmail_client.get_auth_url()
+            st.markdown(f"### [🔗 Gmailを連携する]({auth_url})")
+            st.caption("認証後、自動でこのページに戻ります。")
+        else:
+            st.info("Google認証情報が設定されていません。管理者にお問い合わせください。")
     else:
         col_list, col_detail = st.columns([1, 1.6], gap="large")
 
