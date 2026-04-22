@@ -125,6 +125,7 @@ def do_send(msg: dict, reply_text: str):
         "to": msg["from"],
         "subject": msg["subject"],
     })
+    request_box.save_history("Gmail", msg["from"], msg["subject"], reply_text)
     st.session_state.selected_msg = None
     st.session_state.generated_reply = ""
     st.session_state.gmail_messages = []
@@ -153,7 +154,14 @@ with st.sidebar:
 
     # ナビゲーション
     st.markdown("### メニュー")
-    pages = {"gmail": "📧 Gmail", "line": "💬 LINE", "request": "💡 リクエストボックス", "settings": "⚙️ 設定"}
+    pages = {
+        "gmail":   "📧 Gmail",
+        "line":    "💬 LINE",
+        "request": "💡 リクエストボックス",
+        "history": "🕘 返信履歴",
+        "guide":   "📖 できること",
+        "settings":"⚙️ 設定",
+    }
     for key, label in pages.items():
         is_active = st.session_state.page == key
         if st.button(label, use_container_width=True, type="primary" if is_active else "secondary", key=f"nav_{key}"):
@@ -467,3 +475,59 @@ if page == "settings":
         if st.button("🗑️ 履歴クリア"):
             st.session_state.reply_history = []
             st.rerun()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE: 返信履歴
+# ═══════════════════════════════════════════════════════════════════════════════
+if page == "history":
+    st.markdown("#### 🕘 返信履歴")
+    st.caption("このシステムで送信した返信の記録です。")
+    history = request_box.get_history()
+    if not history:
+        st.info("まだ返信履歴がありません。")
+    else:
+        for item in history:
+            ch = item.get("channel", "")
+            to = item.get("to_address", "")
+            subj = item.get("subject", "")
+            body = item.get("body", "")
+            ts = item.get("created_at", "")[:16].replace("T", " ")
+            with st.expander(f"**{ch}** | {subj[:35]} → {to[:30]}　`{ts}`"):
+                st.text_area("返信内容", value=body, height=120, disabled=True,
+                             label_visibility="collapsed", key=f"hist_{item['id']}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE: できること
+# ═══════════════════════════════════════════════════════════════════════════════
+if page == "guide":
+    st.markdown("#### 📖 replAIでできること")
+    st.markdown("""
+**📧 メールの自動返信**
+- Gmailと連携して受信メールを一覧表示
+- メールを選ぶだけでAIが返信文を自動生成
+- 生成された文章は自分で編集してから送信できる
+
+**🎭 相手に合わせた文体**
+- 上司・先輩へ、友達へ、後輩へなどトーンを選択
+- メールアドレスごとに口調を登録しておくと自動で切り替わる
+
+**📏 返信の長さを調整**
+- 短め・普通・長めの3段階から選択できる
+
+**💬 LINE返信の生成**
+- LINEで受け取ったメッセージを貼り付けて返信文を生成
+- LINE Messaging APIと連携すれば自動送信も可能
+
+**💡 リクエストボックス**
+- 使いながら気になった改善点や追加してほしい機能をリクエスト投稿できる
+- ほかのユーザーがいいねを押すことで要望の優先度が可視化される
+
+**🕘 返信履歴の自動保存**
+- 送信した返信が自動で記録・保存される
+- いつでも過去の返信内容を確認できる
+
+**🔒 セキュリティ**
+- APIキーはサーバー側で管理、画面上に表示されない
+- Gmail認証はGoogleの公式OAuthを使用
+""")
+

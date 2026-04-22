@@ -39,6 +39,33 @@ def submit_request(text: str, session_id: str) -> bool:
         return False
 
 
+def save_history(channel: str, to: str, subject: str, body: str) -> bool:
+    client = _client()
+    if not client:
+        return False
+    try:
+        client.table("reply_history").insert({
+            "channel": channel,
+            "to_address": to,
+            "subject": subject,
+            "body": body,
+        }).execute()
+        return True
+    except Exception:
+        return False
+
+
+def get_history() -> list[dict]:
+    client = _client()
+    if not client:
+        return []
+    try:
+        res = client.table("reply_history").select("*").order("created_at", desc=True).limit(100).execute()
+        return res.data or []
+    except Exception:
+        return []
+
+
 def toggle_like(request_id: int, session_id: str) -> bool:
     client = _client()
     if not client:
