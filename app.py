@@ -58,7 +58,6 @@ _init()
 params = st.query_params
 if "code" in params:
     try:
-        # セッションが切れても credentials.json から flow を再作成して処理
         _, fresh_flow = gmail_client.get_auth_url()
         creds = gmail_client.exchange_code(fresh_flow, params["code"])
         st.session_state.gmail_service = gmail_client.build_service(creds)
@@ -66,6 +65,7 @@ if "code" in params:
         st.query_params.clear()
         st.rerun()
     except Exception as e:
+        st.error(f"Gmail認証エラー: {e}")
         st.query_params.clear()
 
 # Load saved token on startup
