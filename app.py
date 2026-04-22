@@ -26,10 +26,12 @@ st.markdown("""
     font-family: 'Space Grotesk', -apple-system, 'Helvetica Neue', sans-serif;
     font-size: 5.5rem !important;
     font-weight: 900 !important;
-    font-style: italic;
+    font-style: normal;
     letter-spacing: -0.04em;
     line-height: 1;
     margin-bottom: 0;
+    display: inline-block;
+    transform: skewX(-10deg);
 }
 .brand-repl {
     background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
