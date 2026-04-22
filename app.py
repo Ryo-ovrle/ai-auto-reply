@@ -171,7 +171,6 @@ with st.sidebar:
     pages = {
         "gmail":     "📧 Gmail",
         "chatwork":  "💼 Chatwork",
-        "line":      "💬 LINE",
         "request":   "💡 リクエストボックス",
         "history":   "🕘 返信履歴",
         "guide":     "📖 できること",
@@ -577,38 +576,11 @@ if page == "request":
 if page == "settings":
     st.markdown("#### ⚙️ 設定")
 
-    st.markdown("### 🎭 送信者別トーン設定")
-    with st.expander("設定を追加・編集"):
-        new_email = st.text_input("メールアドレス", placeholder="example@gmail.com", key="new_tone_email")
-        new_tone = st.radio("口調", list(groq_client.TONES.keys()), key="new_tone_sel")
-        if new_email.strip():
-            st.session_state.sender_tones[new_email.strip().lower()] = new_tone
-    if st.session_state.sender_tones:
-        for email, tone in list(st.session_state.sender_tones.items()):
-            col_e, col_d = st.columns([3, 1])
-            col_e.caption(f"📧 {email} → {tone}")
-            if col_d.button("🗑", key=f"del_{email}"):
-                del st.session_state.sender_tones[email]
-                st.rerun()
-    else:
-        st.caption("設定なし（デフォルト: 上司・先輩へ）")
-
-    st.divider()
     st.markdown("### 💼 Chatwork")
     cw_input = st.text_input("APIトークン", value=st.session_state.cw_token,
                               type="password", placeholder="Chatwork APIトークン")
     if cw_input:
         st.session_state.cw_token = cw_input
-
-    st.divider()
-    st.markdown("### 💬 LINE（任意）")
-    line_token = st.text_input("Channel Access Token",
-        value=st.session_state.line_token, type="password",
-        placeholder="LINE Messaging API トークン")
-    line_uid = st.text_input("送信先 User ID",
-        value=st.session_state.line_user_id, placeholder="Uxxxxxxxxxx...")
-    if line_token: st.session_state.line_token = line_token
-    if line_uid:   st.session_state.line_user_id = line_uid
 
     if st.session_state.reply_history:
         st.divider()
