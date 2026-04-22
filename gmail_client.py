@@ -16,13 +16,16 @@ TOKEN_FILE = "token.json"
 CREDENTIALS_FILE = "credentials.json"
 
 def _get_redirect_uri() -> str:
+    try:
+        import streamlit as st
+        url = st.secrets.get("STREAMLIT_APP_URL", "")
+        if url:
+            return url.rstrip("/") + "/"
+    except Exception:
+        pass
     cloud_url = os.getenv("STREAMLIT_APP_URL", "")
     if cloud_url:
         return cloud_url.rstrip("/") + "/"
-    # Streamlit Cloud sets HOSTNAME env var containing the app domain
-    hostname = os.getenv("HOSTNAME", "")
-    if hostname and "streamlit.app" in hostname:
-        return f"https://{hostname}/"
     return "http://localhost:8501/"
 
 REDIRECT_URI = "http://localhost:8501/"
