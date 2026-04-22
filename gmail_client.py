@@ -58,6 +58,7 @@ def get_auth_url() -> Tuple[str, object]:
         scopes=SCOPES,
         redirect_uri=_get_redirect_uri(),
     )
+    flow.code_verifier = None  # Disable PKCE — verifier can't survive Streamlit redirect
     auth_url, _ = flow.authorization_url(
         prompt="consent",
         access_type="offline",
@@ -67,9 +68,33 @@ def get_auth_url() -> Tuple[str, object]:
 
 
 def exchange_code(flow, code: str) -> Credentials:
-    flow.redirect_uri = _get_redirect_uri()
-    flow.fetch_token(code=code)
-    creds = flow.credentials
+    import requests as http
+    creds_path = _get_credentials_file()
+    with open(creds_path) as f:
+        raw = json.load(f)
+    cfg = raw.get("web") or raw.get("installed") or {}
+    redirect_uri = _get_redirect_uri()
+    resp = http.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": code,
+            "client_id": cfg["client_id"],
+            "client_secret": cfg["client_secret"],
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        },
+    )
+    token = resp.json()
+    if "error" in token:
+        raise Exception(f"{token['error']}: {token.get('error_description', '')}")
+    creds = Credentials(
+        token=token["access_token"],
+        refresh_token=token.get("refresh_token"),
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=cfg["client_id"],
+        client_secret=cfg["client_secret"],
+        scopes=SCOPES,
+    )
     with open(TOKEN_FILE, "w") as f:
         f.write(creds.to_json())
     return creds
