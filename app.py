@@ -114,6 +114,10 @@ def get_tone_for_sender(sender: str) -> str:
     email = extract_email(sender)
     return st.session_state.sender_tones.get(email, list(groq_client.TONES.keys())[0])
 
+def _user_key() -> str:
+    """履歴の保存・取得に使うユーザー識別キー。Gmail優先、なければOutlookメール。"""
+    return st.session_state.gmail_email or st.session_state.ol_email
+
 def do_generate(original_text: str, extra: str = "", tone: str = "", length: str = "普通") -> str:
     if not tone:
         tone = list(groq_client.TONES.keys())[0]
@@ -143,7 +147,7 @@ def do_send(msg: dict, reply_text: str):
         "to": msg["from"],
         "subject": msg["subject"],
     })
-    request_box.save_history("Gmail", msg["from"], msg["subject"], reply_text, st.session_state.gmail_email)
+    request_box.save_history("Gmail", msg["from"], msg["subject"], reply_text, _user_key())
     st.session_state.selected_msg = None
     st.session_state.generated_reply = ""
     st.session_state.gmail_messages = []
@@ -389,10 +393,14 @@ if page == "outlook":
             col_or1, col_or2 = st.columns([2, 1])
             with col_or1:
                 filter_ol = st.selectbox("フィルター", ["すべて", "未読のみ"],
-                                          label_visibility="collapsed")
+                                          label_visibility="collapsed", key="ol_filter")
             with col_or2:
                 if st.button("🔄", use_container_width=True, key="ol_refresh"):
                     st.session_state.ol_messages = []
+
+            if st.session_state.get("_ol_filter_prev") != filter_ol:
+                st.session_state.ol_messages = []
+                st.session_state["_ol_filter_prev"] = filter_ol
 
             if not st.session_state.ol_messages:
                 with st.spinner("読み込み中..."):
@@ -484,7 +492,7 @@ if page == "outlook":
                                         msg["id"])
                                     request_box.save_history(
                                         "Outlook", msg["from"], msg["subject"],
-                                        edited_ol, st.session_state.ol_email)
+                                        edited_ol, _user_key())
                                     st.success("✅ 送信しました！")
                                     st.session_state.ol_selected_msg = None
                                     st.session_state.ol_generated_reply = ""
@@ -618,7 +626,7 @@ if page == "chatwork":
                                         request_box.save_history("Chatwork",
                                             m.get("account",{}).get("name",""),
                                             room.get("name",""), edited_cw,
-                                            st.session_state.gmail_email)
+                                            _user_key())
                                         st.success("✅ 送信しました！")
                                         st.session_state.cw_selected_msg = None
                                         st.session_state.cw_reply = ""
@@ -745,6 +753,17 @@ if page == "request":
 if page == "settings":
     st.markdown("#### ⚙️ 設定")
 
+    st.markdown("### 🤖 Groq APIキー")
+    groq_input = st.text_input("Groq API Key", value=st.session_state.groq_api_key,
+                                type="password", placeholder="gsk_...",
+                                key="groq_key_input")
+    if groq_input:
+        st.session_state.groq_api_key = groq_input
+    if st.session_state.groq_api_key:
+        st.caption("✅ APIキー設定済み")
+    else:
+        st.warning("Groq APIキーが未設定です。AI返信生成が使えません。")
+
     if st.session_state.reply_history:
         st.divider()
         st.markdown(f"### 📋 送信履歴（{len(st.session_state.reply_history)}件）")
@@ -760,10 +779,11 @@ if page == "settings":
 if page == "history":
     st.markdown("#### 🕘 返信履歴")
     st.caption("このシステムで送信した返信の記録です。72時間で自動削除されます。")
-    if not st.session_state.gmail_email:
-        st.warning("👈 サイドバーからGmailを連携すると履歴が表示されます。")
+    _ukey = _user_key()
+    if not _ukey:
+        st.warning("👈 Gmail または Outlook を連携すると履歴が表示されます。")
     else:
-        history = request_box.get_history(st.session_state.gmail_email)
+        history = request_box.get_history(_ukey)
         if not history:
             st.info("まだ返信履歴がありません。")
         else:
