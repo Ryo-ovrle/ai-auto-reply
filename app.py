@@ -56,16 +56,16 @@ _init()
 
 # ── OAuth callback handling ───────────────────────────────────────────────────
 params = st.query_params
-if "code" in params and st.session_state.oauth_flow is not None:
+if "code" in params:
     try:
-        creds = gmail_client.exchange_code(st.session_state.oauth_flow, params["code"])
+        # セッションが切れても credentials.json から flow を再作成して処理
+        _, fresh_flow = gmail_client.get_auth_url()
+        creds = gmail_client.exchange_code(fresh_flow, params["code"])
         st.session_state.gmail_service = gmail_client.build_service(creds)
         st.session_state.oauth_flow = None
         st.query_params.clear()
-        st.success("✅ Gmail連携が完了しました！")
         st.rerun()
     except Exception as e:
-        st.error(f"OAuth認証エラー: {e}")
         st.query_params.clear()
 
 # Load saved token on startup
@@ -79,16 +79,10 @@ if st.session_state.gmail_service is None and gmail_client.token_exists():
 with st.sidebar:
     st.markdown("## ⚙️ 設定")
 
-    st.markdown("### 🤖 Groq API")
-    groq_key = st.text_input(
-        "Groq APIキー",
-        value=st.session_state.groq_api_key,
-        type="password",
-        placeholder="gsk_...",
-        help="https://console.groq.com で取得（無料）",
-    )
-    if groq_key:
-        st.session_state.groq_api_key = groq_key
+    if st.session_state.groq_api_key:
+        st.markdown("🤖 **Groq API** ✅ 設定済み")
+    else:
+        st.error("⚠️ GROQ_API_KEY が .env にありません")
 
     st.divider()
     st.markdown("### 📧 Gmail")
@@ -140,15 +134,8 @@ with st.sidebar:
     if line_uid:
         st.session_state.line_user_id = line_uid
 
-    st.divider()
-    st.markdown("### 🎨 返信スタイル")
-    tone = st.selectbox("トーン", list(groq_client.TONES.keys()), index=0)
-    language = st.selectbox("言語", ["日本語", "English", "日本語+英語併記"])
-    model = st.selectbox(
-        "AIモデル",
-        ["llama-3.3-70b-versatile", "llama3-70b-8192", "mixtral-8x7b-32768"],
-        index=0,
-    )
+    language = "日本語"
+    model = "llama-3.3-70b-versatile"
 
     if st.session_state.reply_history:
         st.divider()
@@ -165,9 +152,9 @@ st.divider()
 
 
 # ── Helper: generate reply ────────────────────────────────────────────────────
-def do_generate(original_text: str, extra_instruction: str = "") -> str:
+def do_generate(original_text: str, extra_instruction: str = "", tone: str = "👔 上司・先輩へ") -> str:
     if not st.session_state.groq_api_key:
-        st.error("⚠️ サイドバーにGroq APIキーを入力してください。")
+        st.error("⚠️ .env に GROQ_API_KEY がありません。")
         return ""
     if not original_text.strip():
         st.warning("返信元のメッセージを入力してください。")
@@ -266,13 +253,16 @@ with tab_gmail:
                         label_visibility="collapsed",
                     )
 
-                extra = st.text_input(
-                    "🗒️ 追加指示（任意）",
-                    placeholder="例：来週水曜に打ち合わせを提案する、承認の旨を伝える",
-                )
+                tone_gmail = st.radio("相手は？", list(groq_client.TONES.keys()), index=0, key="tone_gmail", horizontal=True)
+                col_tone_g, col_extra_g = st.columns([1, 2])
+                with col_extra_g:
+                    extra = st.text_input(
+                        "追加指示（任意）",
+                        placeholder="例：来週水曜に打ち合わせを提案する、承認の旨を伝える",
+                    )
 
                 if st.button("🤖 返信文を生成", type="primary", use_container_width=True, key="gen_gmail"):
-                    reply = do_generate(msg["body"], extra)
+                    reply = do_generate(msg["body"], extra, tone_gmail)
                     if reply:
                         st.session_state.generated_reply = reply
 
@@ -313,7 +303,7 @@ with tab_gmail:
                                     st.error(f"送信エラー: {e}")
                     with col_s2:
                         if st.button("🔁 再生成", use_container_width=True):
-                            reply = do_generate(msg["body"], extra)
+                            reply = do_generate(msg["body"], extra, tone_gmail)
                             if reply:
                                 st.session_state.generated_reply = reply
                                 st.rerun()
@@ -332,18 +322,17 @@ with tab_manual:
         placeholder="ここに返信したいメッセージを貼り付けてください...",
         label_visibility="collapsed",
     )
+    tone_manual = st.radio("相手は？", list(groq_client.TONES.keys()), index=0, key="tone_manual", horizontal=True)
     manual_extra = st.text_input(
-        "🗒️ 追加指示（任意）",
-        placeholder="例：断る方向で、日程を確認する、感謝を伝える",
+        "追加指示（任意）",
+        placeholder="例：タメ語で、断る方向で、感謝を伝える",
         key="manual_extra",
     )
 
-    col_m1, col_m2 = st.columns([1, 3])
-    with col_m1:
-        gen_btn = st.button("🤖 返信を生成", type="primary", use_container_width=True, key="gen_manual")
+    gen_btn = st.button("🤖 返信を生成", type="primary", use_container_width=True, key="gen_manual")
 
     if gen_btn:
-        reply = do_generate(manual_input, manual_extra)
+        reply = do_generate(manual_input, manual_extra, tone_manual)
         if reply:
             st.session_state["manual_reply"] = reply
 
@@ -398,13 +387,16 @@ with tab_line:
             placeholder="LINEで受け取ったメッセージを貼り付け...",
             label_visibility="collapsed",
         )
-        line_extra = st.text_input(
-            "追加指示（任意）",
-            placeholder="例：了解の旨を短く伝える",
-            key="line_extra",
-        )
+        tone_line = st.radio("相手は？", list(groq_client.TONES.keys()), index=0, key="tone_line", horizontal=True)
+        col_tone_l, col_extra_l = st.columns([1, 2])
+        with col_extra_l:
+            line_extra = st.text_input(
+                "追加指示（任意）",
+                placeholder="例：了解の旨を短く伝える",
+                key="line_extra",
+            )
         if st.button("🤖 返信を生成", type="primary", use_container_width=True, key="gen_line"):
-            reply = do_generate(line_input, line_extra)
+            reply = do_generate(line_input, line_extra, tone_line)
             if reply:
                 st.session_state["line_reply"] = reply
 

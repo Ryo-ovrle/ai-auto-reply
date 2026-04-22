@@ -1,13 +1,15 @@
 import base64
 import re
 import os
+import json
+import tempfile
+from typing import Optional, Tuple
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-import json
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 TOKEN_FILE = "token.json"
@@ -15,17 +17,30 @@ CREDENTIALS_FILE = "credentials.json"
 REDIRECT_URI = "http://localhost:8501/"
 
 
+def _get_credentials_file() -> Optional[str]:
+    """credentials.jsonがなければStreamlit SecretsのGOOGLE_CREDENTIALSから一時ファイルを作成"""
+    if os.path.exists(CREDENTIALS_FILE):
+        return CREDENTIALS_FILE
+    creds_json = os.getenv("GOOGLE_CREDENTIALS")
+    if creds_json:
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        tmp.write(creds_json)
+        tmp.flush()
+        return tmp.name
+    return None
+
+
 def credentials_exist() -> bool:
-    return os.path.exists(CREDENTIALS_FILE)
+    return _get_credentials_file() is not None
 
 
 def token_exists() -> bool:
     return os.path.exists(TOKEN_FILE)
 
 
-def get_auth_url() -> tuple[str, object]:
+def get_auth_url() -> Tuple[str, object]:
     flow = Flow.from_client_secrets_file(
-        CREDENTIALS_FILE,
+        _get_credentials_file(),
         scopes=SCOPES,
         redirect_uri=REDIRECT_URI,
     )
@@ -45,7 +60,7 @@ def exchange_code(flow, code: str) -> Credentials:
     return creds
 
 
-def load_credentials() -> Credentials | None:
+def load_credentials() -> Optional[Credentials]:
     if not token_exists():
         return None
     creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
