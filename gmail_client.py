@@ -53,18 +53,21 @@ def token_exists() -> bool:
 
 
 def get_auth_url() -> Tuple[str, object]:
-    flow = Flow.from_client_secrets_file(
-        _get_credentials_file(),
-        scopes=SCOPES,
-        redirect_uri=_get_redirect_uri(),
-    )
-    flow.code_verifier = None  # Disable PKCE — verifier can't survive Streamlit redirect
-    auth_url, _ = flow.authorization_url(
-        prompt="consent",
-        access_type="offline",
-        include_granted_scopes="true",
-    )
-    return auth_url, flow
+    from urllib.parse import urlencode
+    creds_path = _get_credentials_file()
+    with open(creds_path) as f:
+        raw = json.load(f)
+    cfg = raw.get("web") or raw.get("installed") or {}
+    params = {
+        "client_id": cfg["client_id"],
+        "redirect_uri": _get_redirect_uri(),
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+    auth_url = "https://accounts.google.com/o/oauth2/auth?" + urlencode(params)
+    return auth_url, None
 
 
 def exchange_code(flow, code: str) -> Credentials:
