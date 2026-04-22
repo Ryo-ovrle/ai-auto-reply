@@ -267,13 +267,27 @@ with tab_gmail:
                                 st.session_state.gmail_service, msg["id"])
                             st.session_state.selected_msg = full
                             st.session_state.generated_reply = ""
-                            st.session_state.scroll_to_reply = True
+                            st.session_state.scroll_to_reply = True  # 選択直後にスクロール
                         except Exception as e:
                             st.error(f"取得エラー: {e}")
-                    st.rerun()
+                    st.rerun()  # この rerun 後にスクロールが発火する
 
         # ── メール詳細 + 返信 ───────────────────────────────────────────────
         with col_detail:
+            # 「選択→」を押した直後のrerunでスクロール発火
+            if st.session_state.get("scroll_to_reply"):
+                st.components.v1.html("""
+                <script>
+                setTimeout(function(){
+                    window.parent.document.querySelector('section.main').scrollTo({
+                        top: window.parent.document.querySelector('section.main').scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }, 150);
+                </script>
+                """, height=0)
+                st.session_state.scroll_to_reply = False
+
             if st.session_state.selected_msg is None:
                 st.info("← メールを選択してください")
             else:
@@ -317,20 +331,6 @@ with tab_gmail:
                 if st.session_state.generated_reply:
                     st.markdown("---")
                     st.markdown("#### ✏️ 返信文（編集できます）")
-
-                    # スクロール
-                    if st.session_state.get("scroll_to_reply"):
-                        st.components.v1.html("""
-                        <script>
-                        setTimeout(function(){
-                            window.parent.document.querySelector('section.main').scrollTo({
-                                top: window.parent.document.querySelector('section.main').scrollHeight,
-                                behavior: 'smooth'
-                            });
-                        }, 200);
-                        </script>
-                        """, height=0)
-                        st.session_state.scroll_to_reply = False
 
                     edited = st.text_area(
                         "返信文", value=st.session_state.generated_reply,
