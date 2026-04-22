@@ -63,8 +63,7 @@ def _init():
         "generated_reply": "",
         "reply_history": [],
         "gmail_messages": [],
-        "auto_reply_enabled": False,
-        "sender_tones": {},      # {email: tone}
+        "sender_tones": {},
         "scroll_to_reply": False,
     }
     for k, v in defaults.items():
@@ -150,22 +149,6 @@ with st.sidebar:
                 st.caption("認証後、自動でこのページに戻ります。")
         else:
             st.warning("credentials.json が見つかりません")
-
-    st.divider()
-
-    # 自動返信トグル
-    st.markdown("### 🤖 自動返信")
-    auto_on = st.toggle(
-        "来たメールの自動返信を許可",
-        value=st.session_state.auto_reply_enabled,
-        key="auto_toggle",
-    )
-    st.session_state.auto_reply_enabled = auto_on
-    if auto_on:
-        st.markdown('<span class="auto-badge">⚡ 自動送信モード ON</span>', unsafe_allow_html=True)
-        st.caption("メール選択後、AIが生成して自動送信します。")
-    else:
-        st.caption("メール選択後、AIが返信文を生成します。送信は手動で。")
 
     st.divider()
 
@@ -315,17 +298,7 @@ with tab_gmail:
                     reply = do_generate(msg["body"], extra, tone_gmail)
                     if reply:
                         st.session_state.generated_reply = reply
-                        if st.session_state.auto_reply_enabled:
-                            # 自動送信
-                            try:
-                                do_send(msg, reply)
-                                st.success("⚡ 自動返信を送信しました！")
-                                time.sleep(1.5)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"自動送信エラー: {e}")
-                        else:
-                            st.rerun()
+                        st.rerun()
 
                 # ── 返信文エリア ─────────────────────────────────────────────
                 if st.session_state.generated_reply:
@@ -334,7 +307,8 @@ with tab_gmail:
 
                     edited = st.text_area(
                         "返信文", value=st.session_state.generated_reply,
-                        height=260, label_visibility="collapsed", key="gmail_reply_edit")
+                        height=260, label_visibility="collapsed",
+                        key=f"reply_{msg['id']}")
 
                     col_s1, col_s2, col_s3 = st.columns([2, 1, 1])
                     with col_s1:
