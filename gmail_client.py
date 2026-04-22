@@ -219,6 +219,14 @@ def send_reply(service, original: dict, reply_body: str) -> dict:
     return sent
 
 
+def get_user_email(service) -> str:
+    try:
+        profile = service.users().getProfile(userId="me").execute()
+        return profile.get("emailAddress", "")
+    except Exception:
+        return ""
+
+
 def mark_as_read(service, message_id: str):
     service.users().messages().modify(
         userId="me",

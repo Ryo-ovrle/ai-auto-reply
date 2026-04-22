@@ -1,4 +1,6 @@
 import os
+import hashlib
+import base64
 import streamlit as st
 
 def _client():
@@ -39,29 +41,62 @@ def submit_request(text: str, session_id: str) -> bool:
         return False
 
 
-def save_history(channel: str, to: str, subject: str, body: str) -> bool:
+def _user_id(email: str) -> str:
+    return hashlib.sha256(email.lower().encode()).hexdigest()
+
+
+def _encrypt(text: str, key: str) -> str:
+    k = hashlib.sha256(key.encode()).digest()
+    tb = text.encode("utf-8")
+    enc = bytes(tb[i] ^ k[i % 32] for i in range(len(tb)))
+    return base64.b64encode(enc).decode()
+
+
+def _decrypt(enc_text: str, key: str) -> str:
+    try:
+        k = hashlib.sha256(key.encode()).digest()
+        enc = base64.b64decode(enc_text.encode())
+        dec = bytes(enc[i] ^ k[i % 32] for i in range(len(enc)))
+        return dec.decode("utf-8")
+    except Exception:
+        return "（復号できませんでした）"
+
+
+def save_history(channel: str, to: str, subject: str, body: str, user_email: str) -> bool:
     client = _client()
-    if not client:
+    if not client or not user_email:
         return False
     try:
         client.table("reply_history").insert({
+            "user_id": _user_id(user_email),
             "channel": channel,
             "to_address": to,
             "subject": subject,
-            "body": body,
+            "body_enc": _encrypt(body, user_email),
         }).execute()
         return True
     except Exception:
         return False
 
 
-def get_history() -> list[dict]:
+def get_history(user_email: str) -> list[dict]:
     client = _client()
-    if not client:
+    if not client or not user_email:
         return []
     try:
-        res = client.table("reply_history").select("*").order("created_at", desc=True).limit(100).execute()
-        return res.data or []
+        res = (
+            client.table("reply_history")
+            .select("*")
+            .eq("user_id", _user_id(user_email))
+            .gte("created_at", "now() - interval '72 hours'")
+            .order("created_at", desc=True)
+            .limit(100)
+            .execute()
+        )
+        rows = res.data or []
+        for row in rows:
+            row["body"] = _decrypt(row.get("body_enc", ""), user_email)
+        return rows
     except Exception:
         return []
 

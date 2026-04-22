@@ -79,6 +79,7 @@ def _init():
         "sender_tones": {},
         "scroll_to_reply": False,
         "page": "gmail",
+        "gmail_email": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -125,7 +126,7 @@ def do_send(msg: dict, reply_text: str):
         "to": msg["from"],
         "subject": msg["subject"],
     })
-    request_box.save_history("Gmail", msg["from"], msg["subject"], reply_text)
+    request_box.save_history("Gmail", msg["from"], msg["subject"], reply_text, st.session_state.gmail_email)
     st.session_state.selected_msg = None
     st.session_state.generated_reply = ""
     st.session_state.gmail_messages = []
@@ -136,7 +137,9 @@ params = st.query_params
 if "code" in params:
     try:
         creds = gmail_client.exchange_code(None, params["code"])
-        st.session_state.gmail_service = gmail_client.build_service(creds)
+        svc = gmail_client.build_service(creds)
+        st.session_state.gmail_service = svc
+        st.session_state.gmail_email = gmail_client.get_user_email(svc)
         st.query_params.clear()
         st.rerun()
     except Exception as e:
@@ -482,7 +485,7 @@ if page == "settings":
 if page == "history":
     st.markdown("#### 🕘 返信履歴")
     st.caption("このシステムで送信した返信の記録です。")
-    history = request_box.get_history()
+    history = request_box.get_history(st.session_state.gmail_email)
     if not history:
         st.info("まだ返信履歴がありません。")
     else:
