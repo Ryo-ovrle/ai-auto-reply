@@ -9,6 +9,7 @@ import groq_client
 import gmail_client
 import line_client
 import chatwork_client
+import outlook_client
 import request_box
 
 load_dotenv()
@@ -87,6 +88,12 @@ def _init():
         "cw_messages": [],
         "cw_selected_msg": None,
         "cw_reply": "",
+        "ol_access_token": "",
+        "ol_refresh_token": "",
+        "ol_email": "",
+        "ol_messages": [],
+        "ol_selected_msg": None,
+        "ol_generated_reply": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -146,16 +153,28 @@ def do_send(msg: dict, reply_text: str):
 # ── OAuth callback ────────────────────────────────────────────────────────────
 params = st.query_params
 if "code" in params:
-    try:
-        creds = gmail_client.exchange_code(None, params["code"])
-        svc = gmail_client.build_service(creds)
-        st.session_state.gmail_service = svc
-        st.session_state.gmail_email = gmail_client.get_user_email(svc)
-        st.query_params.clear()
-        st.rerun()
-    except Exception as e:
-        st.error(f"Gmail認証エラー: {e}")
-        st.query_params.clear()
+    if params.get("state") == "outlook_auth":
+        try:
+            token = outlook_client.exchange_code(params["code"])
+            st.session_state.ol_access_token = token["access_token"]
+            st.session_state.ol_refresh_token = token.get("refresh_token", "")
+            st.session_state.ol_email = outlook_client.get_user_email(token["access_token"])
+            st.query_params.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Outlook認証エラー: {e}")
+            st.query_params.clear()
+    else:
+        try:
+            creds = gmail_client.exchange_code(None, params["code"])
+            svc = gmail_client.build_service(creds)
+            st.session_state.gmail_service = svc
+            st.session_state.gmail_email = gmail_client.get_user_email(svc)
+            st.query_params.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Gmail認証エラー: {e}")
+            st.query_params.clear()
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -170,6 +189,7 @@ with st.sidebar:
     st.markdown("### メニュー")
     pages = {
         "gmail":     "📧 Gmail",
+        "outlook":   "📮 Outlook",
         "chatwork":  "💼 Chatwork",
         "request":   "💡 リクエストボックス",
         "history":   "🕘 返信履歴",
@@ -197,6 +217,23 @@ with st.sidebar:
             if st.button("🔗 Gmailを連携する", use_container_width=True, type="primary"):
                 auth_url, _ = gmail_client.get_auth_url()
                 st.markdown(f"**[👉 Googleで認証する]({auth_url})**")
+                st.caption("認証後、自動でこのページに戻ります。")
+
+    # Outlook連携
+    if st.session_state.ol_access_token:
+        st.markdown('<span class="success-badge">✅ Outlook連携済み</span>', unsafe_allow_html=True)
+        if st.button("🔓 Outlook解除", use_container_width=True):
+            st.session_state.ol_access_token = ""
+            st.session_state.ol_refresh_token = ""
+            st.session_state.ol_email = ""
+            st.session_state.ol_messages = []
+            st.session_state.ol_selected_msg = None
+            st.rerun()
+    else:
+        if outlook_client.credentials_exist():
+            if st.button("🔗 Outlookを連携する", use_container_width=True, type="primary"):
+                auth_url = outlook_client.get_auth_url()
+                st.markdown(f"**[👉 Microsoftで認証する]({auth_url})**")
                 st.caption("認証後、自動でこのページに戻ります。")
 
 
@@ -339,6 +376,147 @@ if page == "gmail":
                         if st.button("✕ キャンセル", use_container_width=True):
                             st.session_state.selected_msg = None
                             st.session_state.generated_reply = ""
+                            st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE: Outlook
+# ═══════════════════════════════════════════════════════════════════════════════
+if page == "outlook":
+    if not st.session_state.ol_access_token:
+        st.info("👈 サイドバーから「Outlookを連携する」を押してください。")
+    else:
+        # アクセストークンのリフレッシュを試みる（401時）
+        def _ol_refresh():
+            if st.session_state.ol_refresh_token:
+                try:
+                    token = outlook_client.refresh_access_token(st.session_state.ol_refresh_token)
+                    st.session_state.ol_access_token = token["access_token"]
+                    if token.get("refresh_token"):
+                        st.session_state.ol_refresh_token = token["refresh_token"]
+                except Exception:
+                    st.session_state.ol_access_token = ""
+                    st.rerun()
+
+        col_ol1, col_ol2 = st.columns([1, 1.6], gap="large")
+
+        with col_ol1:
+            st.markdown("#### 📥 受信トレイ")
+            col_or1, col_or2 = st.columns([2, 1])
+            with col_or1:
+                filter_ol = st.selectbox("フィルター", ["すべて", "未読のみ"],
+                                          label_visibility="collapsed")
+            with col_or2:
+                if st.button("🔄", use_container_width=True, key="ol_refresh"):
+                    st.session_state.ol_messages = []
+
+            if not st.session_state.ol_messages:
+                with st.spinner("読み込み中..."):
+                    try:
+                        st.session_state.ol_messages = outlook_client.list_messages(
+                            st.session_state.ol_access_token,
+                            max_results=20,
+                            unread_only=(filter_ol == "未読のみ"),
+                        )
+                    except Exception as e:
+                        if "401" in str(e):
+                            _ol_refresh()
+                        else:
+                            st.error(f"取得エラー: {e}")
+
+            for msg in st.session_state.ol_messages:
+                is_unread = not msg.get("is_read", True)
+                is_selected = (st.session_state.ol_selected_msg is not None and
+                               st.session_state.ol_selected_msg.get("id") == msg["id"])
+                left_border = "3px solid #6366f1" if is_selected else ("3px solid #0078d4" if is_unread else "3px solid transparent")
+                bg = "#1e1b4b10" if is_selected else ""
+                st.markdown(
+                    f"""<div style="border-left:{left_border};background:{bg};border-radius:6px;
+                    padding:0.55rem 0.8rem;margin-bottom:0.35rem;">
+                    <b style="font-size:0.88rem">{'🔵 ' if is_unread else ''}{msg['subject'][:38]}</b><br>
+                    <small style="color:#64748b">{msg['from'][:40]}</small><br>
+                    <small style="color:#94a3b8">{msg['snippet'][:55]}...</small>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
+                if st.button("選択 →", key=f"ol_sel_{msg['id']}", use_container_width=True):
+                    with st.spinner("取得中..."):
+                        try:
+                            full = outlook_client.get_message_body(
+                                st.session_state.ol_access_token, msg["id"])
+                            st.session_state.ol_selected_msg = full
+                            st.session_state.ol_generated_reply = ""
+                        except Exception as e:
+                            if "401" in str(e):
+                                _ol_refresh()
+                            else:
+                                st.error(f"取得エラー: {e}")
+                    st.rerun()
+
+        with col_ol2:
+            if st.session_state.ol_selected_msg is None:
+                st.info("← メールを選択してください")
+            else:
+                msg = st.session_state.ol_selected_msg
+
+                st.markdown(f"#### 📨 {msg['subject']}")
+                st.caption(f"From: {msg['from']}　|　{msg['date']}")
+
+                with st.expander("📄 メール本文", expanded=False):
+                    st.text_area("本文", value=msg["body"][:3000], height=160,
+                                 disabled=True, label_visibility="collapsed")
+
+                tone_ol = st.radio("相手は？", list(groq_client.TONES.keys()),
+                                   index=0, key="tone_ol", horizontal=True)
+                length_ol = st.radio("返信の長さ", list(groq_client.LENGTHS.keys()),
+                                     index=1, key="length_ol", horizontal=True)
+                extra_ol = st.text_input("追加指示（任意）",
+                                         placeholder="例：来週水曜に打ち合わせを提案する",
+                                         key="extra_ol")
+
+                if not st.session_state.ol_generated_reply:
+                    reply = do_generate(msg["body"], extra_ol, tone_ol, length_ol)
+                    if reply:
+                        st.session_state.ol_generated_reply = reply
+                        st.rerun()
+
+                if st.session_state.ol_generated_reply:
+                    st.markdown("---")
+                    st.markdown("#### ✏️ 返信文（編集できます）")
+                    edited_ol = st.text_area(
+                        "返信文", value=st.session_state.ol_generated_reply,
+                        height=260, label_visibility="collapsed",
+                        key=f"ol_reply_{msg['id']}")
+
+                    col_o1, col_o2, col_o3 = st.columns([2, 1, 1])
+                    with col_o1:
+                        if st.button("📤 送信する", type="primary", use_container_width=True, key="ol_send"):
+                            with st.spinner("送信中..."):
+                                try:
+                                    outlook_client.send_reply(
+                                        st.session_state.ol_access_token, msg, edited_ol)
+                                    outlook_client.mark_as_read(
+                                        st.session_state.ol_access_token, msg["id"])
+                                    request_box.save_history(
+                                        "Outlook", msg["from"], msg["subject"],
+                                        edited_ol, st.session_state.ol_email)
+                                    st.success("✅ 送信しました！")
+                                    st.session_state.ol_selected_msg = None
+                                    st.session_state.ol_generated_reply = ""
+                                    st.session_state.ol_messages = []
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"送信エラー: {e}")
+                    with col_o2:
+                        if st.button("🔁 再生成", use_container_width=True, key="ol_regen"):
+                            st.session_state.ol_generated_reply = ""
+                            st.session_state.pop(f"ol_reply_{msg['id']}", None)
+                            st.rerun()
+                    with col_o3:
+                        if st.button("✕ キャンセル", use_container_width=True, key="ol_cancel"):
+                            st.session_state.ol_selected_msg = None
+                            st.session_state.ol_generated_reply = ""
                             st.rerun()
 
 
