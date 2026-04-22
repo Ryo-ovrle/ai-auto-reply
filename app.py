@@ -78,6 +78,7 @@ def _init():
         "gmail_messages": [],
         "sender_tones": {},
         "scroll_to_reply": False,
+        "page": "gmail",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -144,12 +145,26 @@ if "code" in params:
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## ⚙️ 設定")
+    st.markdown(
+        '<p class="brand-title"><span class="brand-repl">repl</span><span class="brand-ai">AI</span></p>',
+        unsafe_allow_html=True
+    )
+    st.divider()
 
-    # Gmail
-    st.markdown("### 📧 Gmail")
+    # ナビゲーション
+    st.markdown("### メニュー")
+    pages = {"gmail": "📧 Gmail", "line": "💬 LINE", "request": "💡 リクエストボックス", "settings": "⚙️ 設定"}
+    for key, label in pages.items():
+        is_active = st.session_state.page == key
+        if st.button(label, use_container_width=True, type="primary" if is_active else "secondary", key=f"nav_{key}"):
+            st.session_state.page = key
+            st.rerun()
+
+    st.divider()
+
+    # Gmail連携
     if st.session_state.gmail_service:
-        st.markdown('<span class="success-badge">✅ 連携済み</span>', unsafe_allow_html=True)
+        st.markdown('<span class="success-badge">✅ Gmail連携済み</span>', unsafe_allow_html=True)
         if st.button("🔓 連携解除", use_container_width=True):
             st.session_state.gmail_service = None
             st.session_state.gmail_messages = []
@@ -161,65 +176,19 @@ with st.sidebar:
                 auth_url, _ = gmail_client.get_auth_url()
                 st.markdown(f"**[👉 Googleで認証する]({auth_url})**")
                 st.caption("認証後、自動でこのページに戻ります。")
-        else:
-            st.warning("credentials.json が見つかりません")
-
-    st.divider()
-
-    # 送信者別トーン設定
-    st.markdown("### 🎭 送信者別トーン設定")
-    with st.expander("設定を追加・編集"):
-        new_email = st.text_input("メールアドレス", placeholder="example@gmail.com", key="new_tone_email")
-        new_tone = st.radio("口調", list(groq_client.TONES.keys()), key="new_tone_sel")
-        if new_email.strip():
-            st.session_state.sender_tones[new_email.strip().lower()] = new_tone
-
-    if st.session_state.sender_tones:
-        for email, tone in list(st.session_state.sender_tones.items()):
-            col_e, col_d = st.columns([3, 1])
-            col_e.caption(f"📧 {email}\n→ {tone}")
-            if col_d.button("🗑", key=f"del_{email}"):
-                del st.session_state.sender_tones[email]
-                st.rerun()
-    else:
-        st.caption("設定なし（デフォルト: 上司・先輩へ）")
-
-    st.divider()
-
-    # LINE
-    st.markdown("### 💬 LINE（任意）")
-    line_token = st.text_input("Channel Access Token",
-        value=st.session_state.line_token, type="password",
-        placeholder="LINE Messaging API トークン")
-    line_uid = st.text_input("送信先 User ID",
-        value=st.session_state.line_user_id, placeholder="Uxxxxxxxxxx...")
-    if line_token: st.session_state.line_token = line_token
-    if line_uid:   st.session_state.line_user_id = line_uid
-
-    if st.session_state.reply_history:
-        st.divider()
-        st.markdown(f"### 📋 送信履歴（{len(st.session_state.reply_history)}件）")
-        if st.button("🗑️ 履歴クリア", use_container_width=True):
-            st.session_state.reply_history = []
-            st.rerun()
-
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
-st.markdown(
-    '<p class="brand-title"><span class="brand-repl">repl</span><span class="brand-ai">AI</span></p>',
-    unsafe_allow_html=True
-)
 st.markdown('<p class="brand-sub">AI-Powered Instant Reply</p>', unsafe_allow_html=True)
 st.divider()
 
-tab_req, tab_gmail, tab_line = st.tabs(["💡 リクエストボックス", "📧 Gmail", "💬 LINE"])
+page = st.session_state.page
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB: Gmail
+# PAGE: Gmail
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_gmail:
+if page == "gmail":
     if not st.session_state.gmail_service:
         st.info("👈 サイドバーから「Gmailを連携する」を押してください。")
     else:
@@ -354,7 +323,7 @@ with tab_gmail:
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB: LINE
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_line:
+if page == "line":
     st.markdown("#### 💬 LINE返信ジェネレーター")
     col_ln1, col_ln2 = st.columns([1, 1], gap="large")
 
@@ -410,7 +379,7 @@ with tab_line:
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB: リクエストボックス
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_req:
+if page == "request":
     import uuid
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(uuid.uuid4())
@@ -458,11 +427,43 @@ with tab_req:
                 st.divider()
 
 
-# ── 送信履歴 ──────────────────────────────────────────────────────────────────
-if st.session_state.reply_history:
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE: 設定
+# ═══════════════════════════════════════════════════════════════════════════════
+if page == "settings":
+    st.markdown("#### ⚙️ 設定")
+
+    st.markdown("### 🎭 送信者別トーン設定")
+    with st.expander("設定を追加・編集"):
+        new_email = st.text_input("メールアドレス", placeholder="example@gmail.com", key="new_tone_email")
+        new_tone = st.radio("口調", list(groq_client.TONES.keys()), key="new_tone_sel")
+        if new_email.strip():
+            st.session_state.sender_tones[new_email.strip().lower()] = new_tone
+    if st.session_state.sender_tones:
+        for email, tone in list(st.session_state.sender_tones.items()):
+            col_e, col_d = st.columns([3, 1])
+            col_e.caption(f"📧 {email} → {tone}")
+            if col_d.button("🗑", key=f"del_{email}"):
+                del st.session_state.sender_tones[email]
+                st.rerun()
+    else:
+        st.caption("設定なし（デフォルト: 上司・先輩へ）")
+
     st.divider()
-    st.markdown("#### 📋 送信履歴")
-    for item in reversed(st.session_state.reply_history[-10:]):
-        st.markdown(
-            f"- `{item['time']}` **{item['channel']}** → {item.get('to','')[:30]}　「{item.get('subject','')[:30]}」"
-        )
+    st.markdown("### 💬 LINE（任意）")
+    line_token = st.text_input("Channel Access Token",
+        value=st.session_state.line_token, type="password",
+        placeholder="LINE Messaging API トークン")
+    line_uid = st.text_input("送信先 User ID",
+        value=st.session_state.line_user_id, placeholder="Uxxxxxxxxxx...")
+    if line_token: st.session_state.line_token = line_token
+    if line_uid:   st.session_state.line_user_id = line_uid
+
+    if st.session_state.reply_history:
+        st.divider()
+        st.markdown(f"### 📋 送信履歴（{len(st.session_state.reply_history)}件）")
+        for item in reversed(st.session_state.reply_history[-10:]):
+            st.markdown(f"- `{item['time']}` **{item['channel']}** → {item.get('to','')[:30]}")
+        if st.button("🗑️ 履歴クリア"):
+            st.session_state.reply_history = []
+            st.rerun()
