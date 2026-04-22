@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import groq_client
 import gmail_client
 import line_client
+import request_box
 
 load_dotenv()
 
@@ -94,7 +95,7 @@ def get_tone_for_sender(sender: str) -> str:
     email = extract_email(sender)
     return st.session_state.sender_tones.get(email, list(groq_client.TONES.keys())[0])
 
-def do_generate(original_text: str, extra: str = "", tone: str = "") -> str:
+def do_generate(original_text: str, extra: str = "", tone: str = "", length: str = "普通") -> str:
     if not tone:
         tone = list(groq_client.TONES.keys())[0]
     if not st.session_state.groq_api_key or not original_text.strip():
@@ -108,6 +109,7 @@ def do_generate(original_text: str, extra: str = "", tone: str = "") -> str:
                 language="日本語",
                 api_key=st.session_state.groq_api_key,
                 model="llama-3.3-70b-versatile",
+                length=length,
             )
         except Exception as e:
             st.error(f"生成エラー: {e}")
@@ -201,6 +203,10 @@ with st.sidebar:
             st.session_state.reply_history = []
             st.rerun()
 
+    st.divider()
+    st.markdown("### 💡 リクエストボックス")
+    st.caption("不満・改善案を投稿。いいねで要望度を示そう。")
+
 
 # ── Header ────────────────────────────────────────────────────────────────────
 st.markdown(
@@ -210,7 +216,7 @@ st.markdown(
 st.markdown('<p class="brand-sub">AI-Powered Instant Reply</p>', unsafe_allow_html=True)
 st.divider()
 
-tab_gmail, tab_line = st.tabs(["📧 Gmail", "💬 LINE"])
+tab_gmail, tab_line, tab_req = st.tabs(["📧 Gmail", "💬 LINE", "💡 リクエストボックス"])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -302,13 +308,15 @@ with tab_gmail:
                     if default_tone in groq_client.TONES else 0
                 tone_gmail = st.radio("相手は？", list(groq_client.TONES.keys()),
                                       index=tone_idx, key="tone_gmail", horizontal=True)
+                length_gmail = st.radio("返信の長さ", list(groq_client.LENGTHS.keys()),
+                                        index=1, key="length_gmail", horizontal=True)
                 extra = st.text_input("追加指示（任意）",
                                       placeholder="例：来週水曜に打ち合わせを提案する",
                                       key="extra_gmail")
 
                 # ── 自動生成 ────────────────────────────────────────────────
                 if not st.session_state.generated_reply:
-                    reply = do_generate(msg["body"], extra, tone_gmail)
+                    reply = do_generate(msg["body"], extra, tone_gmail, length_gmail)
                     if reply:
                         st.session_state.generated_reply = reply
                         st.rerun()
@@ -337,6 +345,7 @@ with tab_gmail:
                     with col_s2:
                         if st.button("🔁 再生成", use_container_width=True):
                             st.session_state.generated_reply = ""
+                            st.session_state.pop(f"reply_{msg['id']}", None)
                             st.rerun()
                     with col_s3:
                         if st.button("✕ キャンセル", use_container_width=True):
@@ -399,6 +408,57 @@ with tab_line:
             if st.button("🔁 再生成", use_container_width=True, key="regen_line"):
                 st.session_state["line_reply"] = ""
                 st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB: リクエストボックス
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_req:
+    import uuid
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+    sid = st.session_state.session_id
+
+    st.markdown("#### 💡 リクエストボックス")
+    st.caption("不満点・改善案・欲しい機能を投稿してください。いいねが多い順に上位表示されます。")
+
+    supabase_ready = bool(
+        (st.secrets.get("SUPABASE_URL") if hasattr(st, "secrets") else None)
+        or os.getenv("SUPABASE_URL")
+    )
+
+    if not supabase_ready:
+        st.warning("⚙️ Supabaseが未設定です。管理者にお問い合わせください。")
+    else:
+        # 投稿フォーム
+        with st.form("req_form", clear_on_submit=True):
+            new_req = st.text_area("リクエストを入力", placeholder="例：Outlookにも対応してほしい", height=80,
+                                   label_visibility="collapsed")
+            submitted = st.form_submit_button("📨 投稿する", use_container_width=True)
+            if submitted and new_req.strip():
+                if request_box.submit_request(new_req, sid):
+                    st.success("投稿しました！")
+                    st.rerun()
+
+        st.markdown("---")
+
+        # リクエスト一覧（いいね順）
+        requests = request_box.get_requests()
+        if not requests:
+            st.info("まだリクエストはありません。最初の投稿をどうぞ！")
+        else:
+            for req in requests:
+                liked_by = req.get("liked_by") or []
+                already_liked = sid in liked_by
+                col_txt, col_btn = st.columns([5, 1])
+                with col_txt:
+                    st.markdown(f"**{req['text']}**")
+                with col_btn:
+                    label = f"{'❤️' if already_liked else '🤍'} {req['likes']}"
+                    if st.button(label, key=f"like_{req['id']}", use_container_width=True):
+                        request_box.toggle_like(req["id"], sid)
+                        st.rerun()
+                st.divider()
 
 
 # ── 送信履歴 ──────────────────────────────────────────────────────────────────
