@@ -169,10 +169,8 @@ with st.sidebar:
     with st.expander("設定を追加・編集"):
         new_email = st.text_input("メールアドレス", placeholder="example@gmail.com", key="new_tone_email")
         new_tone = st.radio("口調", list(groq_client.TONES.keys()), key="new_tone_sel")
-        if st.button("追加", use_container_width=True, key="add_tone"):
-            if new_email.strip():
-                st.session_state.sender_tones[new_email.strip().lower()] = new_tone
-                st.rerun()
+        if new_email.strip():
+            st.session_state.sender_tones[new_email.strip().lower()] = new_tone
 
     if st.session_state.sender_tones:
         for email, tone in list(st.session_state.sender_tones.items()):
