@@ -203,9 +203,6 @@ with st.sidebar:
             st.session_state.reply_history = []
             st.rerun()
 
-    st.divider()
-    st.markdown("### 💡 リクエストボックス")
-    st.caption("不満・改善案を投稿。いいねで要望度を示そう。")
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -216,7 +213,7 @@ st.markdown(
 st.markdown('<p class="brand-sub">AI-Powered Instant Reply</p>', unsafe_allow_html=True)
 st.divider()
 
-tab_gmail, tab_line, tab_req = st.tabs(["📧 Gmail", "💬 LINE", "💡 リクエストボックス"])
+tab_req, tab_gmail, tab_line = st.tabs(["💡 リクエストボックス", "📧 Gmail", "💬 LINE"])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
