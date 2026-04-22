@@ -24,14 +24,22 @@ st.markdown("""
 
 .brand-title {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 2.6rem;
+    font-size: 4.5rem;
     font-weight: 800;
-    background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+    letter-spacing: -0.04em;
+    line-height: 1;
+}
+.brand-repl {
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    letter-spacing: -0.03em;
-    line-height: 1;
+}
+.brand-ai {
+    background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 .brand-sub {
     color: #94a3b8;
@@ -193,7 +201,10 @@ with st.sidebar:
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
-st.markdown('<p class="brand-title">REPLAI</p>', unsafe_allow_html=True)
+st.markdown(
+    '<p class="brand-title"><span class="brand-repl">repl</span><span class="brand-ai">AI</span></p>',
+    unsafe_allow_html=True
+)
 st.markdown('<p class="brand-sub">AI-Powered Instant Reply</p>', unsafe_allow_html=True)
 st.divider()
 
