@@ -204,7 +204,7 @@ with st.sidebar:
             st.session_state.selected_msg = None
             st.rerun()
     else:
-        if gmail_client.credentials_exist():
+        if gmail_client.credentials_exist() and st.session_state.page == "gmail":
             auth_url, _ = gmail_client.get_auth_url()
             st.markdown(f"**[🔗 Gmailを連携する]({auth_url})**")
             st.caption("認証後、自動でこのページに戻ります。")
