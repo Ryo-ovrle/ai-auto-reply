@@ -23,11 +23,12 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700;800&display=swap');
 
 .brand-title {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 4.5rem;
-    font-weight: 800;
+    font-family: 'Space Grotesk', -apple-system, 'Helvetica Neue', sans-serif;
+    font-size: 7rem !important;
+    font-weight: 900 !important;
     letter-spacing: -0.04em;
     line-height: 1;
+    margin-bottom: 0;
 }
 .brand-repl {
     background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
