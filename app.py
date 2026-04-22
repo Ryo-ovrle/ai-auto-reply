@@ -243,8 +243,9 @@ if page == "gmail":
             st.markdown("#### 📥 受信トレイ")
             col_r1, col_r2 = st.columns([2, 1])
             with col_r1:
-                label_filter = st.selectbox("フィルター", ["INBOX", "UNREAD"],
-                                             label_visibility="collapsed", key="gmail_filter")
+                label_filter = st.radio("フィルター", ["INBOX", "UNREAD"],
+                                        horizontal=True, label_visibility="collapsed",
+                                        key="gmail_filter")
             with col_r2:
                 if st.button("🔄", use_container_width=True):
                     st.session_state.gmail_messages = []
@@ -397,8 +398,9 @@ if page == "outlook":
             st.markdown("#### 📥 受信トレイ")
             col_or1, col_or2 = st.columns([2, 1])
             with col_or1:
-                filter_ol = st.selectbox("フィルター", ["すべて", "未読のみ"],
-                                          label_visibility="collapsed", key="ol_filter")
+                filter_ol = st.radio("フィルター", ["すべて", "未読のみ"],
+                                     horizontal=True, label_visibility="collapsed",
+                                     key="ol_filter")
             with col_or2:
                 if st.button("🔄", use_container_width=True, key="ol_refresh"):
                     st.session_state.ol_messages = []
