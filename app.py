@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import groq_client
 import gmail_client
 import line_client
+import chatwork_client
 import request_box
 
 load_dotenv()
@@ -80,6 +81,12 @@ def _init():
         "scroll_to_reply": False,
         "page": "gmail",
         "gmail_email": "",
+        "cw_token": os.getenv("CHATWORK_API_TOKEN", ""),
+        "cw_rooms": [],
+        "cw_selected_room": None,
+        "cw_messages": [],
+        "cw_selected_msg": None,
+        "cw_reply": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -162,12 +169,13 @@ with st.sidebar:
     # ナビゲーション
     st.markdown("### メニュー")
     pages = {
-        "gmail":   "📧 Gmail",
-        "line":    "💬 LINE",
-        "request": "💡 リクエストボックス",
-        "history": "🕘 返信履歴",
-        "guide":   "📖 できること",
-        "settings":"⚙️ 設定",
+        "gmail":     "📧 Gmail",
+        "chatwork":  "💼 Chatwork",
+        "line":      "💬 LINE",
+        "request":   "💡 リクエストボックス",
+        "history":   "🕘 返信履歴",
+        "guide":     "📖 できること",
+        "settings":  "⚙️ 設定",
     }
     for key, label in pages.items():
         is_active = st.session_state.page == key
@@ -336,6 +344,127 @@ if page == "gmail":
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PAGE: Chatwork
+# ═══════════════════════════════════════════════════════════════════════════════
+if page == "chatwork":
+    st.markdown("#### 💼 Chatwork")
+
+    cw_token = st.session_state.cw_token
+    if not cw_token:
+        st.warning("⚙️ 設定ページでChatwork APIトークンを入力してください。")
+    else:
+        col_cw1, col_cw2 = st.columns([1, 1.6], gap="large")
+
+        with col_cw1:
+            st.markdown("#### 💬 ルーム一覧")
+            if st.button("🔄 更新", use_container_width=True, key="cw_refresh"):
+                st.session_state.cw_rooms = []
+                st.session_state.cw_messages = []
+
+            if not st.session_state.cw_rooms:
+                with st.spinner("ルームを読み込み中..."):
+                    try:
+                        st.session_state.cw_rooms = chatwork_client.get_rooms(cw_token)
+                    except Exception as e:
+                        st.error(str(e))
+
+            for room in st.session_state.cw_rooms:
+                is_sel = (st.session_state.cw_selected_room is not None and
+                          st.session_state.cw_selected_room.get("room_id") == room["room_id"])
+                unread = room.get("unread_num", 0)
+                border = "3px solid #6366f1" if is_sel else ("3px solid #f59e0b" if unread else "3px solid transparent")
+                st.markdown(
+                    f"""<div style="border-left:{border};border-radius:6px;padding:0.5rem 0.8rem;margin-bottom:0.3rem;">
+                    <b>{'🟡 ' if unread else ''}{room.get('name','')[:35]}</b>
+                    {'<br><small style="color:#f59e0b">未読 '+str(unread)+'件</small>' if unread else ''}
+                    </div>""", unsafe_allow_html=True)
+                if st.button("選択 →", key=f"cw_room_{room['room_id']}", use_container_width=True):
+                    st.session_state.cw_selected_room = room
+                    st.session_state.cw_messages = []
+                    st.session_state.cw_selected_msg = None
+                    st.session_state.cw_reply = ""
+                    st.rerun()
+
+        with col_cw2:
+            if not st.session_state.cw_selected_room:
+                st.info("← ルームを選択してください")
+            else:
+                room = st.session_state.cw_selected_room
+                st.markdown(f"#### 💬 {room.get('name','')}")
+
+                if not st.session_state.cw_messages:
+                    with st.spinner("メッセージを取得中..."):
+                        try:
+                            st.session_state.cw_messages = chatwork_client.get_messages(
+                                cw_token, str(room["room_id"]))
+                        except Exception as e:
+                            st.error(str(e))
+
+                msgs = st.session_state.cw_messages[-20:][::-1]
+                if not msgs:
+                    st.info("メッセージがありません。")
+                else:
+                    for m in msgs:
+                        acct = m.get("account", {})
+                        sender = acct.get("name", "")
+                        body = m.get("body", "")
+                        is_sel = (st.session_state.cw_selected_msg is not None and
+                                  st.session_state.cw_selected_msg.get("message_id") == m.get("message_id"))
+                        border = "3px solid #6366f1" if is_sel else "3px solid transparent"
+                        st.markdown(
+                            f"""<div style="border-left:{border};border-radius:6px;padding:0.5rem 0.8rem;margin-bottom:0.3rem;">
+                            <b>{sender}</b><br>
+                            <small style="color:#94a3b8">{body[:80]}...</small>
+                            </div>""", unsafe_allow_html=True)
+                        if st.button("返信する →", key=f"cw_msg_{m['message_id']}", use_container_width=True):
+                            st.session_state.cw_selected_msg = m
+                            st.session_state.cw_reply = ""
+                            st.rerun()
+
+                if st.session_state.cw_selected_msg:
+                    st.markdown("---")
+                    m = st.session_state.cw_selected_msg
+                    st.caption(f"返信先: {m.get('account',{}).get('name','')}  |  {m.get('body','')[:60]}")
+                    tone_cw = st.radio("相手は？", list(groq_client.TONES.keys()),
+                                       index=0, key="tone_cw", horizontal=True)
+                    length_cw = st.radio("長さ", list(groq_client.LENGTHS.keys()),
+                                         index=1, key="length_cw", horizontal=True)
+                    extra_cw = st.text_input("追加指示（任意）", key="extra_cw")
+
+                    if not st.session_state.cw_reply:
+                        reply = do_generate(m.get("body", ""), extra_cw, tone_cw, length_cw)
+                        if reply:
+                            st.session_state.cw_reply = reply
+                            st.rerun()
+
+                    if st.session_state.cw_reply:
+                        edited_cw = st.text_area("返信文（編集できます）",
+                                                  value=st.session_state.cw_reply,
+                                                  height=200, key=f"cw_edit_{m['message_id']}")
+                        col_c1, col_c2 = st.columns(2)
+                        with col_c1:
+                            if st.button("📤 送信する", type="primary", use_container_width=True, key="cw_send"):
+                                with st.spinner("送信中..."):
+                                    try:
+                                        chatwork_client.send_message(cw_token, str(room["room_id"]), edited_cw)
+                                        request_box.save_history("Chatwork",
+                                            m.get("account",{}).get("name",""),
+                                            room.get("name",""), edited_cw,
+                                            st.session_state.gmail_email)
+                                        st.success("✅ 送信しました！")
+                                        st.session_state.cw_selected_msg = None
+                                        st.session_state.cw_reply = ""
+                                        st.session_state.cw_messages = []
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(str(e))
+                        with col_c2:
+                            if st.button("🔁 再生成", use_container_width=True, key="cw_regen"):
+                                st.session_state.cw_reply = ""
+                                st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # TAB: LINE
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "line":
@@ -463,6 +592,13 @@ if page == "settings":
                 st.rerun()
     else:
         st.caption("設定なし（デフォルト: 上司・先輩へ）")
+
+    st.divider()
+    st.markdown("### 💼 Chatwork")
+    cw_input = st.text_input("APIトークン", value=st.session_state.cw_token,
+                              type="password", placeholder="Chatwork APIトークン")
+    if cw_input:
+        st.session_state.cw_token = cw_input
 
     st.divider()
     st.markdown("### 💬 LINE（任意）")
