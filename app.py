@@ -419,7 +419,19 @@ if page == "outlook":
                             unread_only=(filter_ol == "未読のみ"),
                         )
                     except Exception as e:
-                        st.error(f"取得エラー: {e}")
+                        err = str(e)
+                        if "BasicAuthBlocked" in err or "AuthFailed" in err or "AUTHENTICATE failed" in err:
+                            st.error("❌ パスワード認証がブロックされています")
+                            st.markdown("""
+**アプリパスワードを使ってください。作成手順：**
+
+1. [account.microsoft.com/security](https://account.microsoft.com/security) を開く
+2. 「2段階認証を設定する」→ 有効化（まだの場合）
+3. ページ内「アプリパスワード」→「新しいアプリパスワードを作成」
+4. 表示された16文字のパスワードをここに入力
+""")
+                        else:
+                            st.error(f"取得エラー: {e}")
 
             for msg in st.session_state.ol_messages:
                 is_unread = not msg.get("is_read", True)
