@@ -1,154 +1,175 @@
-import imaplib
-import smtplib
-import email as _email
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.header import decode_header as _decode_header
-import re
+import requests
+import os
+from urllib.parse import urlencode
 
-IMAP_SERVER = "outlook.office365.com"
-SMTP_SERVER = "smtp.office365.com"
-IMAP_PORT = 993
-SMTP_PORT = 587
+GRAPH = "https://graph.microsoft.com/v1.0"
+AUTH  = "https://login.microsoftonline.com/common/oauth2/v2.0"
+SCOPES = "https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.ReadWrite offline_access"
 
 
-def _decode_str(s: str) -> str:
-    if not s:
-        return ""
-    parts = _decode_header(s)
-    result = ""
-    for part, charset in parts:
-        if isinstance(part, bytes):
-            result += part.decode(charset or "utf-8", errors="replace")
-        else:
-            result += str(part)
-    return result
-
-
-def _imap(email_addr: str, password: str):
-    mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=20)
-    mail.login(email_addr, password)
-    return mail
-
-
-def test_login(email_addr: str, password: str) -> bool:
+def _client_id() -> str:
     try:
-        mail = _imap(email_addr, password)
-        mail.logout()
-        return True
+        import streamlit as st
+        return st.secrets.get("MICROSOFT_CLIENT_ID") or os.getenv("MICROSOFT_CLIENT_ID", "")
     except Exception:
-        return False
+        return os.getenv("MICROSOFT_CLIENT_ID", "")
 
 
-def list_messages(email_addr: str, password: str,
-                  max_results: int = 20, unread_only: bool = False) -> list[dict]:
-    mail = _imap(email_addr, password)
+def _client_secret() -> str:
     try:
-        mail.select("INBOX")
-        criteria = "UNSEEN" if unread_only else "ALL"
-        _, data = mail.uid("SEARCH", None, criteria)
-        uids = data[0].split()
-        uids = uids[-max_results:][::-1]
-
-        items = []
-        for uid in uids:
-            _, raw = mail.uid("FETCH", uid,
-                              "(FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])")
-            if not raw or not raw[0] or not isinstance(raw[0], tuple):
-                continue
-            msg = _email.message_from_bytes(raw[0][1])
-            flags_str = raw[0][0].decode(errors="replace") if raw[0][0] else ""
-            is_read = "\\Seen" in flags_str
-            items.append({
-                "id": uid.decode(),
-                "subject": _decode_str(msg.get("Subject")) or "（件名なし）",
-                "from": _decode_str(msg.get("From", "")),
-                "date": msg.get("Date", "")[:25],
-                "message_id_header": msg.get("Message-ID", ""),
-                "is_read": is_read,
-                "snippet": "",
-            })
-        return items
-    finally:
-        mail.logout()
+        import streamlit as st
+        return st.secrets.get("MICROSOFT_CLIENT_SECRET") or os.getenv("MICROSOFT_CLIENT_SECRET", "")
+    except Exception:
+        return os.getenv("MICROSOFT_CLIENT_SECRET", "")
 
 
-def get_message_body(email_addr: str, password: str, uid: str) -> dict:
-    mail = _imap(email_addr, password)
+def _redirect_uri() -> str:
     try:
-        mail.select("INBOX")
-        _, raw = mail.uid("FETCH", uid.encode(), "(RFC822)")
-    finally:
-        mail.logout()
+        import streamlit as st
+        url = st.secrets.get("STREAMLIT_APP_URL", "")
+        if url:
+            return url.rstrip("/") + "/"
+    except Exception:
+        pass
+    return os.getenv("STREAMLIT_APP_URL", "http://localhost:8501/")
 
-    if not raw or not raw[0] or not isinstance(raw[0], tuple):
-        raise Exception("メッセージの取得に失敗しました")
 
-    msg = _email.message_from_bytes(raw[0][1])
-    body = _extract_text(msg)
+def credentials_exist() -> bool:
+    return bool(_client_id() and _client_secret())
+
+
+def get_auth_url() -> str:
+    params = {
+        "client_id":     _client_id(),
+        "response_type": "code",
+        "redirect_uri":  _redirect_uri(),
+        "scope":         SCOPES,
+        "response_mode": "query",
+        "state":         "outlook_auth",
+    }
+    return f"{AUTH}/authorize?" + urlencode(params)
+
+
+def exchange_code(code: str) -> dict:
+    resp = requests.post(
+        f"{AUTH}/token",
+        data={
+            "client_id":     _client_id(),
+            "client_secret": _client_secret(),
+            "code":          code,
+            "redirect_uri":  _redirect_uri(),
+            "grant_type":    "authorization_code",
+        },
+        timeout=15,
+    )
+    token = resp.json()
+    if "error" in token:
+        raise Exception(f"{token['error']}: {token.get('error_description', '')}")
+    return token
+
+
+def refresh_access_token(refresh_tok: str) -> dict:
+    resp = requests.post(
+        f"{AUTH}/token",
+        data={
+            "client_id":     _client_id(),
+            "client_secret": _client_secret(),
+            "refresh_token": refresh_tok,
+            "grant_type":    "refresh_token",
+        },
+        timeout=15,
+    )
+    token = resp.json()
+    if "error" in token:
+        raise Exception(f"{token['error']}: {token.get('error_description', '')}")
+    return token
+
+
+def _h(access_token: str) -> dict:
+    return {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+
+def get_user_email(access_token: str) -> str:
+    try:
+        r = requests.get(f"{GRAPH}/me", headers=_h(access_token), timeout=10)
+        r.raise_for_status()
+        d = r.json()
+        return d.get("mail") or d.get("userPrincipalName", "")
+    except Exception:
+        return ""
+
+
+def list_messages(access_token: str, max_results: int = 20,
+                  unread_only: bool = False) -> list[dict]:
+    params = {
+        "$top":     max_results,
+        "$select":  "id,subject,from,receivedDateTime,bodyPreview,isRead",
+        "$orderby": "receivedDateTime desc",
+    }
+    if unread_only:
+        params["$filter"] = "isRead eq false"
+    r = requests.get(
+        f"{GRAPH}/me/mailFolders/inbox/messages",
+        headers=_h(access_token),
+        params=params,
+        timeout=15,
+    )
+    r.raise_for_status()
+    items = []
+    for msg in r.json().get("value", []):
+        fa = msg.get("from", {}).get("emailAddress", {})
+        items.append({
+            "id":       msg["id"],
+            "subject":  msg.get("subject") or "（件名なし）",
+            "from":     f"{fa.get('name','')} <{fa.get('address','')}>",
+            "date":     msg.get("receivedDateTime", "")[:16].replace("T", " "),
+            "snippet":  msg.get("bodyPreview", ""),
+            "is_read":  msg.get("isRead", True),
+        })
+    return items
+
+
+def get_message_body(access_token: str, message_id: str) -> dict:
+    r = requests.get(
+        f"{GRAPH}/me/messages/{message_id}",
+        headers={**_h(access_token), "Prefer": "outlook.body-content-type='text'"},
+        params={"$select": "id,subject,from,toRecipients,receivedDateTime,body,conversationId"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    msg = r.json()
+    fa = msg.get("from", {}).get("emailAddress", {})
+    to = ", ".join(
+        rec.get("emailAddress", {}).get("address", "")
+        for rec in msg.get("toRecipients", [])
+    )
     return {
-        "id": uid,
-        "subject": _decode_str(msg.get("Subject", "")),
-        "from": _decode_str(msg.get("From", "")),
-        "to": _decode_str(msg.get("To", "")),
-        "date": msg.get("Date", "")[:25],
-        "message_id_header": msg.get("Message-ID", ""),
-        "references": msg.get("References", ""),
-        "body": body,
+        "id":      message_id,
+        "subject": msg.get("subject", ""),
+        "from":    f"{fa.get('name','')} <{fa.get('address','')}>",
+        "to":      to,
+        "date":    msg.get("receivedDateTime", "")[:16].replace("T", " "),
+        "conversation_id": msg.get("conversationId", ""),
+        "body":    msg.get("body", {}).get("content", ""),
     }
 
 
-def _extract_text(msg) -> str:
-    plain = ""
-    html = ""
-    for part in msg.walk():
-        ct = part.get_content_type()
-        if ct == "text/plain" and not plain:
-            payload = part.get_payload(decode=True)
-            charset = part.get_content_charset() or "utf-8"
-            plain = payload.decode(charset, errors="replace") if payload else ""
-        elif ct == "text/html" and not html:
-            payload = part.get_payload(decode=True)
-            charset = part.get_content_charset() or "utf-8"
-            raw_html = payload.decode(charset, errors="replace") if payload else ""
-            html = re.sub(r"<[^>]+>", "", raw_html).strip()
-    return plain or html
+def send_reply(access_token: str, original: dict, reply_body: str) -> None:
+    requests.post(
+        f"{GRAPH}/me/messages/{original['id']}/reply",
+        headers=_h(access_token),
+        json={"comment": reply_body},
+        timeout=15,
+    ).raise_for_status()
 
 
-def send_reply(email_addr: str, password: str, original: dict, reply_body: str) -> None:
-    msg = MIMEMultipart()
-    subject = original.get("subject", "")
-    if not subject.lower().startswith("re:"):
-        subject = "Re: " + subject
-
-    m = re.search(r"<(.+?)>", original.get("from", ""))
-    to_addr = m.group(1) if m else original.get("from", "")
-
-    msg["From"] = email_addr
-    msg["To"] = to_addr
-    msg["Subject"] = subject
-    mid = original.get("message_id_header", "")
-    if mid:
-        msg["In-Reply-To"] = mid
-        refs = original.get("references", "")
-        msg["References"] = (refs + " " + mid).strip()
-
-    msg.attach(MIMEText(reply_body, "plain", "utf-8"))
-
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(email_addr, password)
-        server.send_message(msg)
-
-
-def mark_as_read(email_addr: str, password: str, uid: str) -> None:
+def mark_as_read(access_token: str, message_id: str) -> None:
     try:
-        mail = _imap(email_addr, password)
-        try:
-            mail.select("INBOX")
-            mail.uid("STORE", uid.encode(), "+FLAGS", "\\Seen")
-        finally:
-            mail.logout()
+        requests.patch(
+            f"{GRAPH}/me/messages/{message_id}",
+            headers=_h(access_token),
+            json={"isRead": True},
+            timeout=10,
+        ).raise_for_status()
     except Exception:
         pass
