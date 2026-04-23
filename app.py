@@ -377,7 +377,7 @@ if page == "outlook":
 
     # ── ログイン入力 ──────────────────────────────────────────────────────────
     ol_email_in = st.text_input("メールアドレス", value=st.session_state.ol_email,
-                                 placeholder="you@outlook.com", key="ol_email_input")
+                                 placeholder="you@outlook.com / you@outlook.jp", key="ol_email_input")
     ol_pass_in = st.text_input("パスワード", value=st.session_state.ol_password,
                                 type="password",
                                 placeholder="パスワード（MFA有効の場合はアプリパスワード）",
